@@ -1,156 +1,112 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-import requests
+from tkinter import messagebox, filedialog
+import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
 import csv
-from fake_useragent import UserAgent
+import time
+import undetected_chromedriver as uc
 
-class ReliableScraperApp:
+
+class ECommerceScraperGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Smart Product Scraper")
-        self.root.geometry("1000x700")
+        self.root.title("E-Commerce Scraper")
+        self.root.geometry("600x500")
         
-        # Initialize components
-        self.create_widgets()
-        self.ua = UserAgent()
-        self.products = []
+        tk.Label(root, text="Enter E-Commerce URL:", font=("Arial", 12)).pack(pady=10)
+        self.url_entry = tk.Entry(root, width=80)
+        self.url_entry.pack(pady=5)
         
-        # Configure style
-        self.style = ttk.Style()
-        self.style.configure('TButton', font=('Arial', 10))
-        self.style.configure('TLabel', font=('Arial', 10))
+        self.scrape_button = tk.Button(root, text="Scrape", command=self.scrape_data,
+                                       font=("Arial", 12), bg="lightblue")
+        self.scrape_button.pack(pady=5)
+        
+        self.save_button = tk.Button(root, text="Save to CSV", command=self.save_to_csv,
+                                     font=("Arial", 12), bg="lightgreen")
+        self.save_button.pack(pady=5)
+        
+        self.result_text = tk.Text(root, height=20, width=80)
+        self.result_text.pack(pady=10)
+        
+        self.data = []  # To store scraped product information
 
-    def create_widgets(self):
-        # Main container
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # URL Input
-        url_frame = ttk.Frame(main_frame)
-        url_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(url_frame, text="Target URL:").pack(side=tk.LEFT)
-        self.url_entry = ttk.Entry(url_frame, width=60)
-        self.url_entry.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
-        
-        # Control Buttons
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(pady=10)
-        
-        self.scrape_btn = ttk.Button(btn_frame, text="Start Scraping", command=self.start_scraping)
-        self.scrape_btn.pack(side=tk.LEFT, padx=5)
-        
-        # Results Table
-        self.tree = ttk.Treeview(main_frame, columns=('Name', 'Price', 'Rating', 'Category', 'Brand'), show='headings')
-        
-        # Configure columns
-        columns = {
-            'Name': {'width': 300, 'anchor': tk.W},
-            'Price': {'width': 100, 'anchor': tk.CENTER},
-            'Rating': {'width': 100, 'anchor': tk.CENTER},
-            'Category': {'width': 200, 'anchor': tk.W},
-            'Brand': {'width': 150, 'anchor': tk.W}
-        }
-        
-        for col, params in columns.items():
-            self.tree.heading(col, text=col)
-            self.tree.column(col, **params)
-            
-        # Add scrollbar
-        scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscroll=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree.pack(fill=tk.BOTH, expand=True)
-
-        # Status Bar
-        self.status = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN)
-        self.status.pack(side=tk.BOTTOM, fill=tk.X)
-
-    def start_scraping(self):
+    def scrape_data(self):
         url = self.url_entry.get().strip()
-        if not url.startswith(('http://', 'https://')):
-            messagebox.showerror("Error", "Please enter a valid URL starting with http:// or https://")
+        if not url:
+            messagebox.showerror("Error", "Please enter a valid URL.")
             return
 
+        self.result_text.delete("1.0", tk.END)
+        self.result_text.insert(tk.END, "Scraping... Please wait.\n")
+        self.root.update()
+
         try:
-            self.status.config(text="Connecting to website...")
-            self.root.update_idletasks()
-            
-            # Randomize user agent
-            headers = {'User-Agent': self.ua.random}
-            
-            # Fetch page content
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            self.status.config(text="Parsing content...")
-            self.root.update_idletasks()
-            
-            soup = BeautifulSoup(response.content, 'lxml')
-            
-            # DEMO SELECTORS - MUST BE UPDATED FOR TARGET WEBSITE
-            product_cards = soup.select('div.product-item')  # Update this selector
-            if not product_cards:
-                messagebox.showwarning("Warning", "No products found - check CSS selectors")
+            # Set up Chrome options. Running in non-headless mode helps mimic real user behavior.
+            options = uc.ChromeOptions()
+            # Uncomment the next line to try headless mode (may be more detectable)
+            # options.add_argument('--headless')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+
+            driver = uc.Chrome(options=options)
+            driver.get(url)
+            # Allow time for the page to fully load; adjust as needed.
+            time.sleep(5)
+
+            page_source = driver.page_source
+            driver.quit()
+
+            soup = BeautifulSoup(page_source, "html.parser")
+            products = []
+            # NOTE: The selectors below are generic placeholders.
+            # Adjust them to match the structure of your target e-commerce site.
+            product_elements = soup.find_all("div", class_="product")
+            if not product_elements:
+                self.result_text.insert(tk.END, "No products found. The site may be using advanced blocking or a different structure.\n")
                 return
 
-            self.status.config(text="Extracting product data...")
-            self.products = []
-            
-            for card in product_cards:
-                try:
-                    product = {
-                        'name': self.safe_extract(card, 'h2.product-title'),
-                        'price': self.safe_extract(card, 'span.price'),
-                        'rating': self.safe_extract(card, 'div.rating'),
-                        'category': self.safe_extract(card, 'div.category'),
-                        'brand': self.safe_extract(card, 'div.brand-name')
-                    }
-                    self.products.append(product)
-                except Exception as e:
-                    print(f"Error processing product: {str(e)}")
+            for prod in product_elements:
+                name_tag = prod.find("h2", class_="product-name")
+                price_tag = prod.find("span", class_="price")
+                rating_tag = prod.find("span", class_="rating")
+                product = {
+                    "Name": name_tag.get_text(strip=True) if name_tag else "N/A",
+                    "Price": price_tag.get_text(strip=True) if price_tag else "N/A",
+                    "Rating": rating_tag.get_text(strip=True) if rating_tag else "N/A"
+                }
+                products.append(product)
 
-            self.update_table()
-            self.save_to_csv()
-            self.status.config(text=f"Success! Found {len(self.products)} products")
+            if not products:
+                self.result_text.insert(tk.END, "Products were not extracted. Try adjusting the selectors.\n")
+                return
 
-        except requests.exceptions.RequestException as e:
-            messagebox.showerror("Connection Error", f"Failed to connect: {str(e)}")
-            self.status.config(text="Ready")
+            self.data = products
+            self.result_text.delete("1.0", tk.END)
+            for product in products:
+                self.result_text.insert(tk.END, f"{product['Name']} - {product['Price']} - {product['Rating']}\n")
+
         except Exception as e:
-            messagebox.showerror("Error", f"Unexpected error: {str(e)}")
-            self.status.config(text="Ready")
-
-    def safe_extract(self, element, selector):
-        """Safely extract text from element with error handling"""
-        result = element.select_one(selector)
-        if result:
-            return result.text.strip()
-        return 'N/A'
-
-    def update_table(self):
-        self.tree.delete(*self.tree.get_children())
-        for product in self.products:
-            self.tree.insert('', 'end', values=(
-                product['name'],
-                product['price'],
-                product['rating'],
-                product['category'],
-                product['brand']
-            ))
+            messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
     def save_to_csv(self):
-        try:
-            with open('products.csv', 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=self.products[0].keys())
-                writer.writeheader()
-                writer.writerows(self.products)
-            messagebox.showinfo("Success", "Data saved to products.csv")
-        except Exception as e:
-            messagebox.showerror("Save Error", f"Failed to save CSV: {str(e)}")
+        if not self.data:
+            messagebox.showerror("Error", "No data to save. Please scrape first.")
+            return
+
+        file_path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                                 filetypes=[("CSV files", "*.csv")])
+        if file_path:
+            try:
+                with open(file_path, mode="w", newline="", encoding="utf-8") as file:
+                    writer = csv.DictWriter(file, fieldnames=["Name", "Price", "Rating"])
+                    writer.writeheader()
+                    for row in self.data:
+                        writer.writerow(row)
+                messagebox.showinfo("Success", "Data saved to CSV successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save CSV: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ReliableScraperApp(root)
+    app = ECommerceScraperGUI(root)
     root.mainloop()
